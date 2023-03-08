@@ -38,12 +38,11 @@ NiAVObject* GetMagTri(NiAVObject* root)
 
 NiPoint3 GetTriCenter(NiAVObject* tri)
 {
-	using namespace F4::BSGraphics;
-	TriShape* triShape = *(TriShape**)((uintptr_t)tri + 0x148);
-	VertexDesc* vertexDesc = (VertexDesc*)((uintptr_t)tri + 0x150);
+	BSGraphics::TriShape* triShape = *(BSGraphics::TriShape**)((uintptr_t)tri + 0x148);
+	BSGraphics::VertexDesc* vertexDesc = (BSGraphics::VertexDesc*)((uintptr_t)tri + 0x150);
 	int16_t vertexCount = *(int16_t*)((uintptr_t)tri + 0x164);
 	uint32_t vertexSize = vertexDesc->GetSize();
-	uint32_t posOffset = vertexDesc->GetAttributeOffset(Vertex::VA_POSITION);
+	uint32_t posOffset = vertexDesc->GetAttributeOffset(BSGraphics::Vertex::VA_POSITION);
 	NiPoint3 ret;
 	if (triShape && triShape->buffer08) {
 		for (int v = 0; v < vertexCount; ++v) {
@@ -77,8 +76,8 @@ public:
 				if (ValidateCollider(collType)) {
 					//_MESSAGE("Mag drop on %s, collider type %s", boneName.c_str(), collType.c_str());
 					//_MESSAGE("Vel %s %s %s", velX.c_str(), velY.c_str(), velZ.c_str());
-					NiAVObject* node = F4::BSUtilities::GetObjectByName(a->Get3D(), boneName, true, true);
-					NiAVObject* mag = F4::BSUtilities::GetObjectByName(a->Get3D(), "WeaponMagazine", true, true);
+					NiAVObject* node = BSUtilities::GetObjectByName(a->Get3D(), boneName, true, true);
+					NiAVObject* mag = BSUtilities::GetObjectByName(a->Get3D(), "WeaponMagazine", true, true);
 					if (node && mag) {
 						MemoryManager mm = MemoryManager::GetSingleton();
 						BSTempEffectDebris* magDebris = (BSTempEffectDebris*)mm.Allocate(sizeof(BSTempEffectDebris), 0, false);
@@ -222,7 +221,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
 	a_info->version = Version::MAJOR;
 
 	if (a_f4se->IsEditor()) {
-		logger::critical("loaded in editor"sv);
+		logger::critical(FMT_STRING("loaded in editor"));
 		return false;
 	}
 
