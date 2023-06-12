@@ -5,22 +5,20 @@ using namespace RE;
 
 const F4SE::TaskInterface* taskInterface;
 PlayerCharacter* p;
+REL::Relocation<Setting*> fGunShellLifetime{ REL::ID(1487562) };
 
-bool ValidateCollider(std::string name)
-{
+bool ValidateCollider(std::string name) {
 	if (name == "ar" || name == "pistol" || name == "banana" || name == "drum")
 		return true;
 	_MESSAGE("Error : Invalid collider type");
 	return false;
 }
 
-int16_t GetVertexCount(NiAVObject* tri)
-{
+int16_t GetVertexCount(NiAVObject* tri) {
 	return *(int16_t*)((uintptr_t)tri + 0x164);
 }
 
-NiAVObject* GetMagTri(NiAVObject* root)
-{
+NiAVObject* GetMagTri(NiAVObject* root) {
 	int16_t vertMax = 0;
 	NiAVObject* mag = nullptr;
 	Visit(root, [&](NiAVObject* obj) {
@@ -36,8 +34,7 @@ NiAVObject* GetMagTri(NiAVObject* root)
 	return mag;
 }
 
-NiPoint3 GetTriCenter(NiAVObject* tri)
-{
+NiPoint3 GetTriCenter(NiAVObject* tri) {
 	BSGraphics::TriShape* triShape = *(BSGraphics::TriShape**)((uintptr_t)tri + 0x148);
 	BSGraphics::VertexDesc* vertexDesc = (BSGraphics::VertexDesc*)((uintptr_t)tri + 0x150);
 	int16_t vertexCount = *(int16_t*)((uintptr_t)tri + 0x164);
@@ -54,13 +51,11 @@ NiPoint3 GetTriCenter(NiAVObject* tri)
 	return ret / (float)vertexCount;
 }
 
-class AnimationGraphEventWatcher
-{
+class AnimationGraphEventWatcher {
 public:
-	typedef BSEventNotifyControl (AnimationGraphEventWatcher::*FnProcessEvent)(BSAnimationGraphEvent& evn, BSTEventSource<BSAnimationGraphEvent>* dispatcher);
+	typedef BSEventNotifyControl (AnimationGraphEventWatcher::* FnProcessEvent)(BSAnimationGraphEvent& evn, BSTEventSource<BSAnimationGraphEvent>* dispatcher);
 
-	BSEventNotifyControl HookedProcessEvent(BSAnimationGraphEvent& evn, BSTEventSource<BSAnimationGraphEvent>* src)
-	{
+	BSEventNotifyControl HookedProcessEvent(BSAnimationGraphEvent& evn, BSTEventSource<BSAnimationGraphEvent>* src) {
 		Actor* a = (Actor*)((uintptr_t)this - 0x38);
 		if (a->Get3D() && a->parentCell && a->gunState == GUN_STATE::kReloading) {
 			if ((evn.animEvent == "countDownTick") && evn.argument.length() != 0) {
@@ -107,8 +102,7 @@ public:
 							char buf[32];
 							sprintf_s(buf, sizeof(buf), "Weapons\\MagColliders\\%s.nif", collType.c_str());
 							//_MESSAGE("Fetching collider %s", buf);
-							new (magDebris) BSTempEffectDebris(a->parentCell, 10.0f, buf, a, pos, node->world.rotate, vel, NiPoint3(), 1.0f, false, true, isFP);
-							magDebris->IncRefCount();
+							new (magDebris) BSTempEffectDebris(a->parentCell, fGunShellLifetime->GetFloat(), buf, a, pos, node->world.rotate, vel, NiPoint3(), 1.0f, false, true, isFP);
 
 							NiAVObject* magDebris3D = magDebris->Get3D();
 							if (magDebris3D) {
@@ -155,7 +149,8 @@ public:
 								}
 							}
 						}
-					} else {
+					}
+					else {
 						_MESSAGE("Error : Failed to find node!");
 					}
 				}
@@ -165,8 +160,7 @@ public:
 		return fn ? (this->*fn)(evn, src) : BSEventNotifyControl::kContinue;
 	}
 
-	void HookSink()
-	{
+	void HookSink() {
 		uintptr_t vtable = *(uintptr_t*)this;
 		auto it = fnHash.find(vtable);
 		if (it == fnHash.end()) {
@@ -180,16 +174,14 @@ protected:
 };
 std::unordered_map<uintptr_t, AnimationGraphEventWatcher::FnProcessEvent> AnimationGraphEventWatcher::fnHash;
 
-void InitializePlugin()
-{
+void InitializePlugin() {
 	p = PlayerCharacter::GetSingleton();
 	((AnimationGraphEventWatcher*)((uintptr_t)p + 0x38))->HookSink();
 	uintptr_t ActorVtable = REL::Relocation<uintptr_t>{ Actor::VTABLE[3] }.address();
 	((AnimationGraphEventWatcher*)(&ActorVtable))->HookSink();
 }
 
-extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a_f4se, F4SE::PluginInfo* a_info)
-{
+extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface * a_f4se, F4SE::PluginInfo * a_info) {
 #ifndef NDEBUG
 	auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
 #else
@@ -234,8 +226,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
 	return true;
 }
 
-extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se)
-{
+extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface * a_f4se) {
 	F4SE::Init(a_f4se);
 
 	taskInterface = F4SE::GetTaskInterface();
