@@ -1,32 +1,14 @@
-# Prerequisites
-*.d
+# dot folders
+.cache/
+.idea/
+.vs/
+.vscode/
+.xmake/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# folders
+build*/
+vs*/
 
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
+# files
+*.zip
+compile_commands.json

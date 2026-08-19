@@ -5,7 +5,7 @@ using namespace RE;
 
 const F4SE::TaskInterface* taskInterface;
 PlayerCharacter* p;
-REL::Relocation<Setting*> fGunShellLifetime{ REL::ID(1487562) };
+REL::Relocation<Setting*> fGunShellLifetime{ REL::ID{ 1487562, 1487562 } };
 
 bool ValidateCollider(std::string name) {
 	if (name == "ar" || name == "pistol" || name == "banana" || name == "drum")
@@ -14,16 +14,17 @@ bool ValidateCollider(std::string name) {
 	return false;
 }
 
-int16_t GetVertexCount(NiAVObject* tri) {
-	return *(int16_t*)((uintptr_t)tri + 0x164);
+std::uint16_t GetVertexCount(NiAVObject* tri) {
+	auto* triShape = tri ? tri->IsTriShape() : nullptr;
+	return triShape ? triShape->numVertices : 0;
 }
 
 NiAVObject* GetMagTri(NiAVObject* root) {
-	int16_t vertMax = 0;
+	std::uint16_t vertMax = 0;
 	NiAVObject* mag = nullptr;
 	Visit(root, [&](NiAVObject* obj) {
 		if (obj->IsTriShape()) {
-			int16_t vertCount = GetVertexCount(obj);
+			const auto vertCount = GetVertexCount(obj);
 			if (vertCount > vertMax) {
 				vertMax = vertCount;
 				mag = obj;
@@ -35,20 +36,23 @@ NiAVObject* GetMagTri(NiAVObject* root) {
 }
 
 NiPoint3 GetTriCenter(NiAVObject* tri) {
-	BSGraphics::TriShape* triShape = *(BSGraphics::TriShape**)((uintptr_t)tri + 0x148);
-	BSGraphics::VertexDesc* vertexDesc = (BSGraphics::VertexDesc*)((uintptr_t)tri + 0x150);
-	int16_t vertexCount = *(int16_t*)((uintptr_t)tri + 0x164);
-	uint32_t vertexSize = vertexDesc->GetSize();
-	uint32_t posOffset = vertexDesc->GetAttributeOffset(BSGraphics::Vertex::VA_POSITION);
-	NiPoint3 ret;
-	if (triShape && triShape->buffer08) {
-		for (int v = 0; v < vertexCount; ++v) {
-			uintptr_t posPtr = (uintptr_t)triShape->buffer08->rawVertexData + v * vertexSize + posOffset;
+	auto* geometry = tri ? tri->IsTriShape() : nullptr;
+	if (!geometry || geometry->numVertices == 0) {
+		return {};
+	}
+
+	auto* rendererData = static_cast<BSGraphics::TriShape*>(geometry->rendererData);
+	const auto vertexSize = geometry->vertexDesc.GetSize();
+	const auto posOffset = geometry->vertexDesc.GetAttributeOffset(BSGraphics::Vertex::VA_POSITION);
+	NiPoint3 ret{};
+	if (rendererData && rendererData->vertexBuffer) {
+		for (std::uint16_t v = 0; v < geometry->numVertices; ++v) {
+			uintptr_t posPtr = reinterpret_cast<std::uintptr_t>(rendererData->vertexBuffer->data) + v * vertexSize + posOffset;
 			NiPoint3 pos{ half_float::half_cast<float>(*(half_float::half*)(posPtr)), half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x2)), half_float::half_cast<float>(*(half_float::half*)(posPtr + 0x4)) };
 			ret = ret + pos;
 		}
 	}
-	return ret / (float)vertexCount;
+	return ret / static_cast<float>(geometry->numVertices);
 }
 
 class AnimationGraphEventWatcher {
@@ -58,15 +62,15 @@ public:
 	BSEventNotifyControl HookedProcessEvent(BSAnimationGraphEvent& evn, BSTEventSource<BSAnimationGraphEvent>* src) {
 		Actor* a = (Actor*)((uintptr_t)this - 0x38);
 		if (a->Get3D() && a->parentCell && a->gunState == GUN_STATE::kReloading) {
-			if ((evn.animEvent == "countDownTick") && evn.argument.length() != 0) {
+			if ((evn.tag == "countDownTick") && evn.payload.length() != 0) {
 				std::string boneName;
-				std::string collType = SplitString(evn.argument.c_str(), "|", boneName);
+				std::string collType = SplitString(evn.payload.c_str(), "|", boneName);
 				std::string velX, velY, velZ;
 				boneName = SplitString(boneName, "|", velX);
 				velX = SplitString(velX, "|", velY);
 				velY = SplitString(velY, "|", velZ);
 				for (auto& c : collType) {
-					c = tolower(c);
+					c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 				}
 				if (ValidateCollider(collType)) {
 					//_MESSAGE("Mag drop on %s, collider type %s", boneName.c_str(), collType.c_str());
@@ -127,7 +131,7 @@ public:
 								NiAVObject* targetMagTri = GetMagTri(node);
 								if (targetMagTri) {
 									NiCloningProcess cp{};
-									cp.unk60 = 1;
+									cp.copyType = NiCloningProcess::CopyType::kCopyExact;
 									//_MESSAGE("Cloning mag");
 									NiAVObject* clonedMagTri = (NiAVObject*)targetMagTri->CreateClone(cp);
 									if (clonedMagTri) {
@@ -181,61 +185,37 @@ void InitializePlugin() {
 	((AnimationGraphEventWatcher*)(&ActorVtable))->HookSink();
 }
 
-extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface * a_f4se, F4SE::PluginInfo * a_info) {
-#ifndef NDEBUG
-	auto sink = std::make_shared<spdlog::sinks::msvc_sink_mt>();
-#else
-	auto path = logger::log_directory();
-	if (!path) {
-		return false;
+void OnF4SEMessage(F4SE::MessagingInterface::Message* msg) {
+	if (msg->type == F4SE::MessagingInterface::kGameDataReady) {
+		InitializePlugin();
 	}
+}
 
-	*path /= fmt::format(FMT_STRING("{}.log"), Version::PROJECT);
-	auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(path->string(), true);
-#endif
-
-	auto log = std::make_shared<spdlog::logger>("global log"s, std::move(sink));
-
-#ifndef NDEBUG
-	log->set_level(spdlog::level::trace);
-#else
-	log->set_level(spdlog::level::info);
-	log->flush_on(spdlog::level::warn);
-#endif
-
-	spdlog::set_default_logger(std::move(log));
-	spdlog::set_pattern("%g(%#): [%^%l%$] %v"s);
-
-	logger::info(FMT_STRING("{} v{}"), Version::PROJECT, Version::NAME);
-
-	a_info->infoVersion = F4SE::PluginInfo::kVersion;
-	a_info->name = Version::PROJECT.data();
-	a_info->version = Version::MAJOR;
-
-	if (a_f4se->IsEditor()) {
-		logger::critical(FMT_STRING("loaded in editor"));
-		return false;
-	}
-
-	const auto ver = a_f4se->RuntimeVersion();
-	if (ver < F4SE::RUNTIME_1_10_162) {
-		logger::critical(FMT_STRING("unsupported runtime v{}"), ver.string());
-		return false;
-	}
-
+F4SEPluginLoad(const F4SE::LoadInterface* a_f4se) {
+	F4SE::Init(a_f4se, {
+		.log = true,
+		.logName = "MagPoop",
+	});
+	taskInterface = F4SE::GetTaskInterface();
+	const auto isOG = REX::FModule::IsRuntimeOG();
+	const auto executableVersion = REX::FModule::GetExecutingModule().GetFileVersion();
+	REX::INFO("detected Fallout 4 runtime={} f4seRuntimeVersion={} executableVersion={}",
+		isOG ? "OG" : "AE", a_f4se->RuntimeVersion().string(), executableVersion.string());
+	F4SE::GetMessagingInterface()->RegisterListener(OnF4SEMessage);
 	return true;
 }
 
-extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface * a_f4se) {
-	F4SE::Init(a_f4se);
-
-	taskInterface = F4SE::GetTaskInterface();
-	const F4SE::MessagingInterface* message = F4SE::GetMessagingInterface();
-	message->RegisterListener([](F4SE::MessagingInterface::Message* msg) -> void {
-		if (msg->type == F4SE::MessagingInterface::kGameDataReady) {
-			InitializePlugin();
+extern "C"
+{
+	F4SE_EXPORT bool F4SEPlugin_Query(const F4SE::QueryInterface*, F4SE::PluginInfo* a_info)
+	{
+		const auto* versionData = F4SE::PluginVersionData::GetSingleton();
+		if (!versionData) {
+			return false;
 		}
-	});
-
-	return true;
+		a_info->name = versionData->GetPluginName().data();
+		a_info->infoVersion = F4SE::PluginInfo::kVersion;
+		a_info->version = versionData->pluginVersion;
+		return true;
+	}
 }
